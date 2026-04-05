@@ -52,6 +52,8 @@ function analyzeSalesData(data, options) {
         || !Array.isArray(data.products) 
         || !Array.isArray(data.purchase_records)
         || data.sellers.length === 0
+        || data.products.length === 0
+        || data.purchase_records.length === 0
     ) {
         throw new Error('Некорректные входные данные');
     }
@@ -61,18 +63,17 @@ function analyzeSalesData(data, options) {
         throw new Error('Не переданы функции расчёта');
     }
 
-    // --- ПОДГОТОВКА СТАТИСТИКИ ---
-    // Создаём массив для накопления данных по каждому продавцу
+    // Подготовка статистики по продавцам
     const sellerStats = data.sellers.map(seller => ({
         id: seller.id,
         name: `${seller.first_name} ${seller.last_name}`,
         revenue: 0,
         profit: 0,
         sales_count: 0,
-        products_sold: {} // Объект для подсчёта товаров: { 'SKU_001': 5 }
+        products_sold: {}
     }));
 
-    // Создаём индексы для быстрого поиска (чтобы не искать в массивах каждый раз)
+    // Индексы для быстрого доступа
     const sellerIndex = Object.fromEntries(
         sellerStats.map(s => [s.id, s])
     );
@@ -80,31 +81,23 @@ function analyzeSalesData(data, options) {
         data.products.map(p => [p.sku, p])
     );
 
-    // --- ОБРАБОТКА ЧЕКОВ (БИЗНЕС-ЛОГИКА) ---
+    // Обработка чеков
     data.purchase_records.forEach(record => {
         const seller = sellerIndex[record.seller_id];
-        if (!seller) return; // Если продавец не найден, пропускаем
+        if (!seller) return;
         
-        // Обновляем общую статистику по чеку
         seller.sales_count += 1;
         seller.revenue += record.total_amount;
         
-        // Обрабатываем каждый товар в чеке
         record.items.forEach(item => {
             const product = productIndex[item.sku];
-            if (!product) return; // Если товар не найден, пропуска
+            if (!product) return;
             
-            // Себестоимость = цена закупки * количество
             const cost = product.purchase_price * item.quantity;
-            
-            // Выручка через переданную функцию (с учётом скидки)
             const revenue = calculateRevenue(item, product);
-            
-            // Прибыль = Выручка - Себестоимость
             const itemProfit = revenue - cost;
             seller.profit += itemProfit;
             
-            // Считаем количество проданных товаров по артикулам
             if (!seller.products_sold[item.sku]) {
                 seller.products_sold[item.sku] = 0;
             }
@@ -112,42 +105,27 @@ function analyzeSalesData(data, options) {
         });
     });
 
-    // --- СОРТИРОВКА ПО ПРИБЫЛИ (по убыванию) ---
+    // Сортировка по прибыли (по убыванию)
     sellerStats.sort((a, b) => b.profit - a.profit);
 
-    // --- РАСЧЁТ БОНУСОВ И ТОП-10 ТОВАРОВ ---
+    // Расчёт бонусов и топ-10 товаров
     sellerStats.forEach((seller, index) => {
-        // Считаем бонус
         seller.bonus = calculateBonus(index, sellerStats.length, seller);
         
-        // Формируем топ-10 товаров
         seller.top_products = Object.entries(seller.products_sold)
             .map(([sku, quantity]) => ({ sku, quantity }))
-            .sort((a, b) => b.quantity - a.quantity) // Сортируем по количеству
-            .slice(0, 10); // Берём первые 10
+            .sort((a, b) => b.quantity - a.quantity)
+            .slice(0, 10);
     });
 
-    // --- ФОРМИРОВАНИЕ ИТОГОВОГО ОТЧЁТА ---
+    // Формируем итоговый отчёт
     return sellerStats.map(seller => ({
         seller_id: seller.id,
         name: seller.name,
-        revenue: +seller.revenue.toFixed(2),   // Округляем до 2 знаков
-        profit: +seller.profit.toFixed(2),     // Округляем до 2 знаков
+        revenue: +seller.revenue.toFixed(2),
+        profit: +seller.profit.toFixed(2),
         sales_count: seller.sales_count,
         top_products: seller.top_products,
-        bonus: +seller.bonus.toFixed(2)        // Округляем до 2 знаков
+        bonus: +seller.bonus.toFixed(2)
     }));
-    // @TODO: Проверка наличия опций
-
-    // @TODO: Подготовка промежуточных данных для сбора статистики
-
-    // @TODO: Индексация продавцов и товаров для быстрого доступа
-
-    // @TODO: Расчет выручки и прибыли для каждого продавца
-
-    // @TODO: Сортировка продавцов по прибыли
-
-    // @TODO: Назначение премий на основе ранжирования
-
-    // @TODO: Подготовка итоговой коллекции с нужными полями
 }
